@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -22,6 +23,61 @@ from typing import Any
 
 class ImportErrorWithContext(RuntimeError):
     """Fehler mit einer verständlichen Meldung für die Kommandozeile."""
+
+
+ENV_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def load_env_file(filename: str) -> None:
+    """Lädt eine einfache dotenv-Datei, ohne bestehende Variablen zu ersetzen."""
+    path = Path(filename).expanduser()
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError as exc:
+        raise ImportErrorWithContext(
+            f"Umgebungsdatei konnte nicht gelesen werden: {exc}"
+        ) from exc
+
+    for line_number, original_line in enumerate(lines, start=1):
+        line = original_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            raise ImportErrorWithContext(
+                f"Ungültige Zeile {line_number} in {path}: '=' fehlt."
+            )
+
+        name, raw_value = line.split("=", 1)
+        name = name.strip()
+        raw_value = raw_value.strip()
+        if not ENV_NAME_PATTERN.fullmatch(name):
+            raise ImportErrorWithContext(
+                f"Ungültiger Variablenname in Zeile {line_number} von {path}."
+            )
+
+        if raw_value.startswith('"'):
+            try:
+                value = json.loads(raw_value)
+            except json.JSONDecodeError as exc:
+                raise ImportErrorWithContext(
+                    f"Ungültiger Anführungswert in Zeile {line_number} von {path}."
+                ) from exc
+            if not isinstance(value, str):
+                raise ImportErrorWithContext(
+                    f"Ungültiger Wert in Zeile {line_number} von {path}."
+                )
+        elif raw_value.startswith("'"):
+            if len(raw_value) < 2 or not raw_value.endswith("'"):
+                raise ImportErrorWithContext(
+                    f"Nicht geschlossenes Anführungszeichen in Zeile {line_number} von {path}."
+                )
+            value = raw_value[1:-1]
+        else:
+            value = re.split(r"\s+#", raw_value, maxsplit=1)[0].rstrip()
+
+        os.environ.setdefault(name, value)
 
 
 def read_opml(source: str, timeout: float) -> bytes:
@@ -149,6 +205,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("source", help="Lokale OPML-Datei oder HTTP(S)-URL")
     parser.add_argument("category", help="Zielkategorie für neue Feeds")
     parser.add_argument(
+        "--env-file",
+        metavar="DATEI",
+        help="Zugangsdaten aus einer dotenv-Datei laden, z. B. .env",
+    )
+    parser.add_argument(
         "--miniflux-url",
         default=os.environ.get("MINIFLUX_URL"),
         help="Miniflux-Basis-URL (oder Umgebungsvariable MINIFLUX_URL)",
@@ -240,12 +301,18 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
     try:
+        env_parser = argparse.ArgumentParser(add_help=False)
+        env_parser.add_argument("--env-file")
+        env_args, _ = env_parser.parse_known_args()
+        if env_args.env_file:
+            load_env_file(env_args.env_file)
+
+        parser = build_parser()
+        args = parser.parse_args()
         return run(args)
     except ImportErrorWithContext as exc:
-        parser.exit(1, f"Fehler: {exc}\n")
+        raise SystemExit(f"Fehler: {exc}") from exc
 
 
 if __name__ == "__main__":

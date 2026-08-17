@@ -24,6 +24,22 @@ export MINIFLUX_URL="https://miniflux.example.org"
 export MINIFLUX_API_TOKEN="dein-api-token"
 ```
 
+Alternativ können die Werte in einer `.env`-Datei liegen:
+
+```dotenv
+MINIFLUX_URL=https://miniflux.example.org
+MINIFLUX_API_TOKEN=dein-api-token
+```
+
+Diese Datei wird explizit mit `--env-file` geladen:
+
+```bash
+./miniflux_opml_import.py abonnements.opml "Meine Blogs" --env-file .env
+```
+
+Die Priorität bei mehrfach gesetzten Werten lautet: direkte Befehlsparameter,
+bereits vorhandene Umgebungsvariablen, Werte aus der `.env`-Datei.
+
 OPML von einer URL importieren:
 
 ```bash
@@ -75,6 +91,9 @@ Skript beendet sich in diesem Fall mit Statuscode `2`.
 Der API-Token sollte bevorzugt über `MINIFLUX_API_TOKEN` gesetzt werden. So
 erscheint er nicht in der Kommandohistorie oder Prozessliste. Token und andere
 Zugangsdaten gehören nicht in OPML-Dateien oder Git-Commits.
+
+Die mitgelieferte `.env.example` kann als Vorlage kopiert werden. Die echte
+`.env`-Datei wird von Git ignoriert.
 
 ## Lizenz
 
